@@ -1,0 +1,3 @@
+[submodule "modules/NetLib"]
+	path = modules/NetLib
+	url = https://github.com/HerrNamenlos123/NetLib.git
