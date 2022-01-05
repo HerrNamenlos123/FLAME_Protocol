@@ -6,8 +6,7 @@ function appendTable(tableA, tableB)
     end
 end
 
--- Include the subprojects
-include "modules/NetLib"
+
 
 -- Main library project
 project "FLAME_Protocol"
@@ -53,22 +52,11 @@ project "FLAME_Protocol"
     files ({ "include/**", "src/**" })
 
     
-    -- NetLib dependency
-    dependson "NetLib"
-    includedirs (NETLIB_INCLUDE_DIRS)
-    libdirs (NETLIB_LINK_DIRS)
-    links (NETLIB_LINKS)
-
-
-
-
     -- Include and linker information for premake projects using this library
     FLAMEPROTOCOL_INCLUDE_DIRS = {}
     appendTable(FLAMEPROTOCOL_INCLUDE_DIRS, _includedirs)
 
     FLAMEPROTOCOL_LINK_DIRS = {}
     appendTable(FLAMEPROTOCOL_LINK_DIRS, _SCRIPT_DIR .. "/bin/%{cfg.buildcfg}/")
-    appendTable(FLAMEPROTOCOL_LINK_DIRS, NETLIB_LINK_DIRS)
 
     FLAMEPROTOCOL_LINKS = { "FLAME_Protocol" }
-    appendTable(FLAMEPROTOCOL_LINKS, NETLIB_LINKS)
