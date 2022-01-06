@@ -40,9 +40,8 @@
 // Byte 0 -> 0x42
 
 // Discovery Response
-// Byte   0 -> 0x42
-// Byte 1-4 -> IPv4 address of the client
-// Byte 5-6 -> CRC16 over bytes 0-4
+// Byte 0-3 -> IPv4 address of the client
+// Byte 4-5 -> CRC16 over bytes 0-3
 
 #include "stdint.h"
 
@@ -56,7 +55,7 @@
 #define FLAME_PROTOCOL_CONTROL_PACKET_LENGTH 23
 #define FLAME_PROTOCOL_REVIEW_PACKET_LENGTH 7
 #define FLAME_PROTOCOL_DISCOVERY_PACKET_LENGTH 1
-#define FLAME_PROTOCOL_DISCOVERY_RESPONSE_LENGTH 7
+#define FLAME_PROTOCOL_DISCOVERY_RESPONSE_LENGTH 6
 
 namespace FLAME_Protocol {
 
@@ -147,12 +146,12 @@ namespace FLAME_Protocol {
 	};
 
 	/// <summary>
-	/// Buffer must be 7 bytes large!
+	/// Buffer must be 6 bytes large!
 	/// </summary>
 	void generatePacket(FLAME_Protocol::DiscoveryResponse* discoveryResponse, uint8_t* buffer);
 
 	/// <summary>
-	/// Buffer must be 7 bytes large!
+	/// Buffer must be 6 bytes large!
 	/// </summary>
 	bool parsePacket(FLAME_Protocol::DiscoveryResponse* discoveryResponse, uint8_t* buffer);
 
