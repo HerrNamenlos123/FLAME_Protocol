@@ -1,41 +1,7 @@
+
 #include "FLAME_Protocol.h"
 
 namespace FLAME_Protocol {
-    void generatePacket(FLAME_Protocol::Packet* packet, FLAME_Protocol::PacketData* pd) {
-
-        memcpy(packet->data, &pd->axis1, sizeof(pd->axis1));
-        memcpy(packet->data + 4, &pd->axis2, sizeof(pd->axis2));
-        memcpy(packet->data + 8, &pd->axis3, sizeof(pd->axis3));
-        memcpy(packet->data + 12, &pd->axis4, sizeof(pd->axis4));
-        memcpy(packet->data + 16, &pd->id, sizeof(pd->id));
-        memcpy(packet->data + 17, &pd->additional, 4);
-
-        uint16_t crcValue = CRC16(packet->data, 21);
-        memcpy(packet->data + 21, &crcValue, sizeof(crcValue));
-
-    }
-
-    bool parsePacket(FLAME_Protocol::Packet* packet, FLAME_Protocol::PacketData* pd) {
-        uint16_t crcCalculated = CRC16(packet->data, 21);
-        uint16_t crcReceived = 0;
-        memcpy(&crcReceived, packet->data + 21, sizeof(crcReceived));
-
-        if (crcCalculated != crcReceived) {
-            return false;
-        }
-        memcpy(&pd->axis1, packet->data + 0, 4);
-        memcpy(&pd->axis2, packet->data + 4, 4);
-        memcpy(&pd->axis3, packet->data + 8, 4);
-        memcpy(&pd->axis4, packet->data + 12, 4);
-        memcpy(&pd->id, packet->data + 16, 4);
-        memcpy(&pd->additional, packet->data + 17, 4);
-
-        return true;
-
-
-    }
-
-
 
     uint16_t CRC16(uint8_t* data, size_t len) {
         uint16_t crc = 0x1337;
@@ -66,6 +32,148 @@ namespace FLAME_Protocol {
             crc = (crc << 8) ^ table[((crc >> 8) ^ *data++)];
 
         return crc;
+    }
+
+
+
+
+
+
+
+
+    // ================================
+    // =====    CONTROL PACKET    =====
+    // ================================
+
+    void generatePacket(FLAME_Protocol::ControlPacket* controlPacket, uint8_t* buffer) {
+
+        memcpy(buffer + 0, &controlPacket->axis1, 4);
+        memcpy(buffer + 4, &controlPacket->axis2, 4);
+        memcpy(buffer + 8, &controlPacket->axis3, 4);
+        memcpy(buffer + 12, &controlPacket->axis4, 4);
+        memcpy(buffer + 16, &controlPacket->id, 1);
+        memcpy(buffer + 17, &controlPacket->additional, 4);
+
+        uint16_t crcValue = CRC16(buffer, 21);
+        memcpy(buffer + 21, &crcValue, 2);
+
+    }
+
+    bool parsePacket(FLAME_Protocol::ControlPacket* controlPacket, uint8_t* buffer) {
+
+        uint16_t crcCalculated = CRC16(buffer, 21);
+        uint16_t crcReceived = 0;
+        memcpy(&crcReceived, buffer + 21, 2);
+
+        if (crcCalculated != crcReceived) {
+            return false;
+        }
+
+        memcpy(&controlPacket->axis1, buffer + 0, 4);
+        memcpy(&controlPacket->axis2, buffer + 4, 4);
+        memcpy(&controlPacket->axis3, buffer + 8, 4);
+        memcpy(&controlPacket->axis4, buffer + 12, 4);
+        memcpy(&controlPacket->id, buffer + 16, 1);
+        memcpy(&controlPacket->additional, buffer + 17, 4);
+
+        return true;
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+    // ===============================
+    // =====    Review PACKET    =====
+    // ===============================
+
+    void generatePacket(FLAME_Protocol::ReviewPacket* reviewPacket, uint8_t* buffer) {
+
+        memcpy(buffer + 0, &reviewPacket->id, 1);
+        memcpy(buffer + 1, &reviewPacket->data, 4);
+
+        uint16_t crcValue = CRC16(buffer, 5);
+        memcpy(buffer + 5, &crcValue, 2);
+
+    }
+
+    bool parsePacket(FLAME_Protocol::ReviewPacket* reviewPacket, uint8_t* buffer) {
+
+        uint16_t crcCalculated = CRC16(buffer, 5);
+        uint16_t crcReceived = 0;
+        memcpy(&crcReceived, buffer + 5, 2);
+
+        if (crcCalculated != crcReceived) {
+            return false;
+        }
+
+        memcpy(&reviewPacket->id, buffer, 1);
+        memcpy(&reviewPacket->data, buffer + 1, 4);
+
+        return true;
+    }
+
+
+
+
+
+
+
+
+    // ==================================
+    // =====    DISCOVERY PACKET    =====
+    // ==================================
+
+    void generatePacket(uint8_t* buffer) {
+        buffer[0] = 0x42;
+    }
+
+    bool parsePacket(uint8_t* buffer) {
+        return buffer[0] == 0x42;
+    }
+
+
+
+
+
+
+
+
+    // ===========================================
+    // =====    DISCOVERY RESPONSE PACKET    =====
+    // ===========================================
+
+    void generatePacket(FLAME_Protocol::DiscoveryResponse* discoveryResponse, uint8_t* buffer) {
+
+        memcpy(buffer + 0, &discoveryResponse->controlByte, 1);
+        memcpy(buffer + 1, &discoveryResponse->ipAddress, 4);
+
+        uint16_t crcValue = CRC16(buffer, 5);
+        memcpy(buffer + 5, &crcValue, 2);
+
+    }
+
+    bool parsePacket(FLAME_Protocol::DiscoveryResponse* discoveryResponse, uint8_t* buffer) {
+
+        uint16_t crcCalculated = CRC16(buffer, 5);
+        uint16_t crcReceived = 0;
+        memcpy(&crcReceived, buffer + 5, 2);
+
+        if (crcCalculated != crcReceived) {
+            return false;
+        }
+
+        memcpy(&discoveryResponse->controlByte, buffer, 1);
+        memcpy(&discoveryResponse->ipAddress, buffer + 1, 4);
+
+        return true;
     }
 
 }
