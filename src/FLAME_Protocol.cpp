@@ -132,11 +132,11 @@ namespace FLAME_Protocol {
     // ==================================
 
     void generatePacket(uint8_t* buffer) {
-        buffer[0] = 0x42;
+        buffer[0] = FLAME_PROTOCOL_CONTROL_BYTE;
     }
 
     bool parsePacket(uint8_t* buffer) {
-        return buffer[0] == 0x42;
+        return buffer[0] == FLAME_PROTOCOL_CONTROL_BYTE;
     }
 
 
@@ -152,7 +152,8 @@ namespace FLAME_Protocol {
 
     void generatePacket(FLAME_Protocol::DiscoveryResponse* discoveryResponse, uint8_t* buffer) {
 
-        memcpy(buffer + 0, &discoveryResponse->controlByte, 1);
+        uint8_t controlByte = FLAME_PROTOCOL_CONTROL_BYTE;
+        memcpy(buffer + 0, &controlByte, 1);
         memcpy(buffer + 1, &discoveryResponse->ipAddress, 4);
 
         uint16_t crcValue = CRC16(buffer, 5);
@@ -170,10 +171,11 @@ namespace FLAME_Protocol {
             return false;
         }
 
-        memcpy(&discoveryResponse->controlByte, buffer, 1);
+        uint8_t controlByte = 0;
+        memcpy(&controlByte, buffer, 1);
         memcpy(&discoveryResponse->ipAddress, buffer + 1, 4);
 
-        return true;
+        return controlByte == FLAME_PROTOCOL_CONTROL_BYTE;
     }
 
 }

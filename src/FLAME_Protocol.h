@@ -52,6 +52,7 @@
 #include "Arduino.h"
 #endif
 
+#define FLAME_PROTOCOL_CONTROL_BYTE 0x42
 #define FLAME_PROTOCOL_CONTROL_PACKET_LENGTH 23
 #define FLAME_PROTOCOL_REVIEW_PACKET_LENGTH 7
 #define FLAME_PROTOCOL_DISCOVERY_PACKET_LENGTH 1
@@ -142,7 +143,6 @@ namespace FLAME_Protocol {
 	// ===========================================
 
 	struct DiscoveryResponse {
-		uint8_t controlByte = 0;
 		uint32_t ipAddress = 0;
 	};
 
