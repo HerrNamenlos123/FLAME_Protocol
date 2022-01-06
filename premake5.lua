@@ -43,13 +43,13 @@ project "FLAME_Protocol"
 
     -- Include directories
     local _includedirs = { 
-        _SCRIPT_DIR .. "/include"
+        _SCRIPT_DIR .. "/src"
     }
     includedirs (_includedirs)
 
     
     -- Main source files
-    files ({ "include/**", "src/**" })
+    files ({ "src/**" })
 
     
     -- Include and linker information for premake projects using this library
