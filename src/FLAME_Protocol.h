@@ -1,18 +1,25 @@
+#pragma once
+
 // 4 * 4 byte fix 
 // id 
 // 4 byte 
 // 2 byte checksum CRC16 ODRIVE
-#pragma once
+// = 23 bytes for standard packet
+
+#include "stdint.h"
+
 #ifdef _WIN32
 #include <cstring>
 #else
 #include "Arduino.h"
 #endif
 
-#include "stdint.h"
+#define FLAME_PROTOCOL_STANDARD_PACKET_LENGTH 23
+
 namespace FLAME_Protocol {
+
 	struct Packet {
-		uint8_t data[23];
+		uint8_t data[FLAME_PROTOCOL_STANDARD_PACKET_LENGTH];
 	};
 
 	struct PacketData {
@@ -30,5 +37,3 @@ namespace FLAME_Protocol {
 
 	uint16_t CRC16(uint8_t* data, size_t len);
 }
-
-
