@@ -1,0 +1,22 @@
+#######################################
+# Syntax Coloring Map For AccelStepper
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+FLAME_Protocol	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+generatePacket	KEYWORD2
+parsePacket	KEYWORD2
+CRC16	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+ 
