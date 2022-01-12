@@ -63,6 +63,7 @@
 	#endif
 #else										// if not Arduino
 	#include <cstring>
+	#include <stdio.h>
 	#ifdef FLAME_DEBUG
 		#define DEBUG_PRINT(msg, ...) printf(msg "\n", __VA_ARGS__)
 	#else

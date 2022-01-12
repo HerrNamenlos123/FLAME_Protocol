@@ -236,7 +236,7 @@ namespace FLAME_Protocol {
 
 	void makeReviewPacket(FLAME_Instance* flame) {
 
-        float v = 18.7;
+        float v = 18.7f;
         void* v_ptr = &v;
 
 		flame->reviewPacket.id = 45;
@@ -270,7 +270,7 @@ namespace FLAME_Protocol {
 
             if (flame->reviewPacketCount % 50 == 0) {
                 DEBUG_PRINT("Bad packets: ");
-                DEBUG_PRINT(flame->badPackets);
+                DEBUG_PRINT("%d", flame->badPackets);
             }
     	}
 	}
