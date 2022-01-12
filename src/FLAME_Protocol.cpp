@@ -174,4 +174,105 @@ namespace FLAME_Protocol {
         return true;
     }
 
+
+
+
+
+
+
+	// ============================================
+	// =====    PROTOCOL PARSING FUNCTIONS    =====
+	// ============================================
+
+	void controlPacketReceived(FLAME_Instance* flame) {
+
+	    flame->lastControlPacket = getMicros();
+	
+	    if (!flame->active) {
+	        DEBUG_PRINT("Stream resumed");
+	    }
+	    flame->active = true;      // fix me
+
+	    //DEBUG_PRINT("Control packet received");
+
+	}
+
+	void discoveryPacketReceived(FLAME_Instance* flame) {
+
+	    DEBUG_PRINT("Discovery packet received");
+
+		flame->discoveryResponse.ipAddress = getLocalIP();
+
+	    FLAME_Protocol::generatePacket(&flame->discoveryResponse, flame->packetBuffer);
+
+		writeUDP(flame->controllerIP, flame->controllerPort, flame->packetBuffer, FLAME_PROTOCOL_DISCOVERY_RESPONSE_LENGTH);
+	}
+
+	void PacketReceived(FLAME_Instance* flame, uint8_t* buffer, uint8_t length, uint32_t controllerIP) {
+		
+        // Interpret the packet
+        if (length == FLAME_PROTOCOL_CONTROL_PACKET_LENGTH) {
+            if (FLAME_Protocol::parsePacket(&flame->controlPacket, buffer)) {
+				flame->controllerIP = controllerIP;
+                controlPacketReceived(flame);
+            }
+            else {
+                flame->badPackets++;
+            }
+        }
+        else if (length == FLAME_PROTOCOL_DISCOVERY_PACKET_LENGTH) {
+            if (FLAME_Protocol::parsePacket(buffer)) {
+				flame->controllerIP = controllerIP;
+                discoveryPacketReceived(flame);
+            }
+            else {
+                flame->badPackets++;
+            }
+        }
+        else {
+            flame->badPackets++;
+        }
+	}
+
+	void makeReviewPacket(FLAME_Instance* flame) {
+
+        float v = 18.7;
+        void* v_ptr = &v;
+
+		flame->reviewPacket.id = 45;
+		flame->reviewPacket.data = *((uint32_t*)v_ptr);
+
+	}
+
+	void UpdateReviewStream(FLAME_Instance* flame) {
+
+		uint32_t now = getMicros();
+		if (now - flame->lastReview >= flame->reviewCycleTime) {
+    	    flame->lastReview = now;
+	
+    	    if (now - flame->lastControlPacket < flame->controlPacketTimeout) {
+
+    	        makeReviewPacket(flame);
+
+    	        FLAME_Protocol::generatePacket(&flame->reviewPacket, flame->packetBuffer);
+    	        writeUDP(flame->controllerIP, flame->controllerPort, flame->packetBuffer, FLAME_PROTOCOL_REVIEW_PACKET_LENGTH);
+    	    }
+    	    else {
+
+    	        if (flame->active) {
+    	            DEBUG_PRINT("Control packet timeout");
+    	        }
+
+    	        flame->active = false;
+    	    }
+
+            flame->reviewPacketCount++;
+
+            if (flame->reviewPacketCount % 50 == 0) {
+                DEBUG_PRINT("Bad packets: ");
+                DEBUG_PRINT(flame->badPackets);
+            }
+    	}
+	}
+
 }

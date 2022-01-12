@@ -45,19 +45,40 @@
 
 #include "stdint.h"
 
-#ifdef _WIN32
-#include <cstring>
-#else
-#include "Arduino.h"
-#endif
-
 #define FLAME_PROTOCOL_CONTROL_BYTE 0x42
 #define FLAME_PROTOCOL_CONTROL_PACKET_LENGTH 23
 #define FLAME_PROTOCOL_REVIEW_PACKET_LENGTH 7
 #define FLAME_PROTOCOL_DISCOVERY_PACKET_LENGTH 1
 #define FLAME_PROTOCOL_DISCOVERY_RESPONSE_LENGTH 6
+#define FLAME_PROTOCOL_MAX_PACKET_LENGTH FLAME_PROTOCOL_CONTROL_PACKET_LENGTH
+
+#define FLAME_DEBUG
+
+#if defined(ARDUINO) && ARDUINO >= 100		// if Arduino
+	#include "Arduino.h"
+	#ifdef FLAME_DEBUG
+		#define DEBUG_PRINT(...) Serial.println(__VA_ARGS__)
+	#else
+		#define DEBUG_PRINT()
+	#endif
+#else										// if not Arduino
+	#include <cstring>
+	#ifdef FLAME_DEBUG
+		#define DEBUG_PRINT(msg, ...) printf(msg "\n", __VA_ARGS__)
+	#else
+		#define DEBUG_PRINT()
+	#endif
+#endif
+
+
+// These functions must be defined by the user
+uint32_t getMicros();
+uint32_t getLocalIP();
+void writeUDP(uint32_t targetIP, uint16_t targetPort, uint8_t* data, uint8_t length);
 
 namespace FLAME_Protocol {
+
+
 
 
 	// ================================
@@ -154,5 +175,57 @@ namespace FLAME_Protocol {
 	/// Buffer must be 6 bytes large!
 	/// </summary>
 	bool parsePacket(FLAME_Protocol::DiscoveryResponse* discoveryResponse, uint8_t* buffer);
+
+
+
+
+
+
+
+	// =======================================
+	// =====    FLAME INSTANCE STRUCT    =====
+	// =======================================
+
+	struct FLAME_Instance {
+		
+		ControlPacket controlPacket;
+		ReviewPacket reviewPacket;
+		DiscoveryResponse discoveryResponse;
+
+		uint32_t badPackets = 0;
+		uint32_t controllerIP = 0;
+		uint32_t controllerPort = 22500;
+		uint32_t receiverIP = 0;
+		uint32_t receiverPort = 22500;
+		uint32_t lastControlPacket = 0;
+		uint32_t controlPacketTimeout = 1000000;       // us
+		uint32_t lastReview = 0;
+		uint32_t reviewCycleTime = 20000;       // us
+		uint32_t reviewPacketCount = 0;
+
+		uint8_t packetBuffer[FLAME_PROTOCOL_MAX_PACKET_LENGTH];
+
+		bool active = false;	// fix me: make enum
+
+	};
+
+
+
+
+
+
+	// ============================================
+	// =====    PROTOCOL PARSING FUNCTIONS    =====
+	// ============================================
+
+	void controlPacketReceived(FLAME_Instance* flame);
+
+	void discoveryPacketReceived(FLAME_Instance* flame);
+
+	void PacketReceived(FLAME_Instance* flame, uint8_t* buffer, uint8_t length, uint32_t controllerIP);
+
+	void makeReviewPacket(FLAME_Instance* flame);
+
+	void UpdateReviewStream(FLAME_Instance* flame);
 
 }
