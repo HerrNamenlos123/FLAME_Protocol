@@ -58,7 +58,7 @@
 	#include "Arduino.h"
 	#ifdef FLAME_DEBUG
 		//#define DEBUG_PRINT(...) Serial.println(__VA_ARGS__)
-		#define DEBUG_PRINTF(fmt, ...) { char buffer[64]; sprintf(buffer, fmt "\n", ##__VA_ARGS__); Serial.println(buffer); }
+		#define DEBUG_PRINTF(fmt, ...) { char buffer[64]; sprintf(buffer, fmt "\n", ##__VA_ARGS__); Serial.print(buffer); }
 	#else
 		#define DEBUG_PRINTF()
 	#endif
@@ -194,15 +194,28 @@ namespace FLAME_Protocol {
 		ReviewPacket reviewPacket;
 		DiscoveryResponse discoveryResponse;
 
+		float desiredAxis0 = 0;
+		float desiredAxis1 = 0;
+		float desiredAxis2 = 0;
+		float desiredAxis3 = 0;
+
+		float actualAxis0 = 0;
+		float actualAxis1 = 0;
+		float actualAxis2 = 0;
+		float actualAxis3 = 0;
+
+		bool odrive0Error = false;
+		bool odrive1Error = false;
+
 		uint32_t badPackets = 0;
 		uint32_t controllerIP = 0;
-		uint32_t controllerPort = 22500;
+		uint32_t controllerPort = FLAME_PROTOCOL_UDP_TARGET_PORT;
 		uint32_t receiverIP = 0;
 		uint32_t receiverPort = 22500;
 		uint32_t lastControlPacket = 0;
-		uint32_t controlPacketTimeout = 1000000;       // us
+		uint32_t controlPacketTimeout = 100000;       // us
 		uint32_t lastReview = 0;
-		uint32_t reviewCycleTime = 20000;       // us
+		uint32_t reviewCycleTime = 500;       // us
 		uint32_t reviewPacketCount = 0;
 
 		uint8_t packetBuffer[FLAME_PROTOCOL_MAX_PACKET_LENGTH];

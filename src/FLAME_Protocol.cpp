@@ -193,6 +193,14 @@ namespace FLAME_Protocol {
 	    }
 	    flame->active = true;      // fix me
 
+        static uint32_t data = 0;
+        data++;
+
+        if (data != flame->controlPacket.additional) {
+            DEBUG_PRINTF("ERROR: Packet missed, internal: %d, received: %d", data, flame->controlPacket.additional);
+            data = flame->controlPacket.additional;
+        }
+
 	    //DEBUG_PRINTF("Control packet received");
 
 	}
@@ -236,11 +244,11 @@ namespace FLAME_Protocol {
 
 	void makeReviewPacket(FLAME_Instance* flame) {
 
-        float v = 18.7f;
-        void* v_ptr = &v;
+        static uint32_t v = 0;
+        v++;
 
 		flame->reviewPacket.id = 45;
-		flame->reviewPacket.data = *((uint32_t*)v_ptr);
+        memcpy(&flame->reviewPacket.data, &v, sizeof(flame->reviewPacket.data));
 
 	}
 
@@ -268,10 +276,10 @@ namespace FLAME_Protocol {
 
             flame->reviewPacketCount++;
 
-            if (flame->reviewPacketCount % 50 == 0) {
-                DEBUG_PRINTF("Bad packets: ");
-                DEBUG_PRINTF("%d", flame->badPackets);
-            }
+            //if (flame->reviewPacketCount % 50 == 0) {
+            //    DEBUG_PRINTF("Bad packets: ");
+            //    DEBUG_PRINTF("%d", flame->badPackets);
+            //}
     	}
 	}
 
