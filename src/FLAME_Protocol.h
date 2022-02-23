@@ -189,39 +189,61 @@ namespace FLAME_Protocol {
 	// =====    FLAME INSTANCE STRUCT    =====
 	// =======================================
 
+	template<typename T>
+	class Endpoint {
+		uint32_t* location;
+	public:
+		Endpoint(uint32_t* location) : location(location) {}
+		operator T() {
+			T value = 0;
+			memcpy(&value, location, sizeof(T));
+			return value;
+		}
+		void operator=(T value) {
+			*location = 0;
+			memcpy(location, &value, sizeof(T));
+		}
+	};
+
 	struct FLAME_Instance {
 		
 		ControlPacket controlPacket;
 		ReviewPacket reviewPacket;
 		DiscoveryResponse discoveryResponse;
 
-		float desiredAxis0 = 0;
-		float desiredAxis1 = 0;
-		float desiredAxis2 = 0;
-		float desiredAxis3 = 0;
+		uint32_t registers[15];
 
-		float actualAxis0 = 0;
-		float actualAxis1 = 0;
-		float actualAxis2 = 0;
-		float actualAxis3 = 0;
+		Endpoint<float> desiredAxis1 = registers + 0;
+		Endpoint<float> desiredAxis2 = registers + 1;
+		Endpoint<float> desiredAxis3 = registers + 2;
+		Endpoint<float> desiredAxis4 = registers + 3;
 
-		bool odrive0Error = false;
-		bool odrive1Error = false;
+		Endpoint<float> actualAxis1 = registers + 4;
+		Endpoint<float> actualAxis2 = registers + 5;
+		Endpoint<float> actualAxis3 = registers + 6;
+		Endpoint<float> actualAxis4 = registers + 7;
+
+		Endpoint<bool> odrive0Axis0Error = registers + 8;
+		Endpoint<bool> odrive0Axis1Error = registers + 9;
+		Endpoint<bool> odrive0Error = registers + 10;	
+		Endpoint<bool> odrive1Axis0Error = registers + 11;
+		Endpoint<bool> odrive1Axis1Error = registers + 12;
+		Endpoint<bool> odrive1Error = registers + 13;	
+
+		Endpoint<bool> safetyMode = registers + 14;
 
 		uint32_t badPackets = 0;
 		uint32_t controllerIP = 0;
 		uint32_t controllerPort = FLAME_PROTOCOL_UDP_TARGET_PORT;
 		uint32_t receiverIP = 0;
-		uint32_t receiverPort = 22500;
+		uint32_t receiverPort = FLAME_PROTOCOL_UDP_TARGET_PORT;
 		uint32_t lastControlPacket = 0;
-		uint32_t controlPacketTimeout = 100000;       // us
+		uint32_t controlPacketTimeout = 100000;      // us
 		uint32_t lastReview = 0;
 		uint32_t reviewCycleTime = 500;       // us
 		uint32_t reviewPacketCount = 0;
 
 		uint8_t packetBuffer[FLAME_PROTOCOL_MAX_PACKET_LENGTH];
-
-		bool active = false;	// fix me: make enum
 
 	};
 

@@ -187,21 +187,15 @@ namespace FLAME_Protocol {
 	void controlPacketReceived(FLAME_Instance* flame) {
 
 	    flame->lastControlPacket = getMicros();
-	
-	    if (!flame->active) {
-	        DEBUG_PRINTF("Stream resumed");
-	    }
-	    flame->active = true;      // fix me
 
-        static uint32_t data = 0;
-        data++;
+        flame->desiredAxis1 = flame->controlPacket.axis1;
+        flame->desiredAxis2 = flame->controlPacket.axis2;
+        flame->desiredAxis3 = flame->controlPacket.axis3;
+        flame->desiredAxis4 = flame->controlPacket.axis4;
 
-        if (data != flame->controlPacket.additional) {
-            DEBUG_PRINTF("ERROR: Packet missed, internal: %d, received: %d", data, flame->controlPacket.additional);
-            data = flame->controlPacket.additional;
+        if (flame->controlPacket.id >= 0 && flame->controlPacket.id < sizeof(flame->registers) / sizeof(flame->registers[0])) {
+            flame->registers[flame->controlPacket.id] = flame->controlPacket.additional;
         }
-
-	    //DEBUG_PRINTF("Control packet received");
 
 	}
 
@@ -210,9 +204,7 @@ namespace FLAME_Protocol {
 	    DEBUG_PRINTF("Discovery packet received");
 
 		flame->discoveryResponse.ipAddress = getLocalIP();
-
 	    FLAME_Protocol::generatePacket(&flame->discoveryResponse, flame->packetBuffer);
-
 		writeUDP(flame->controllerIP, flame->controllerPort, flame->packetBuffer, FLAME_PROTOCOL_DISCOVERY_RESPONSE_LENGTH);
 	}
 
@@ -243,13 +235,15 @@ namespace FLAME_Protocol {
 	}
 
 	void makeReviewPacket(FLAME_Instance* flame) {
+        static uint8_t endpointID = 0;
 
-        static uint32_t v = 0;
-        v++;
+		flame->reviewPacket.id = endpointID;
+        flame->reviewPacket.data = *(flame->registers + endpointID);
+        endpointID++;
 
-		flame->reviewPacket.id = 45;
-        memcpy(&flame->reviewPacket.data, &v, sizeof(flame->reviewPacket.data));
-
+        if (endpointID > sizeof(flame->registers) / sizeof(flame->registers[0])) {
+            endpointID = 0;
+        }
 	}
 
 	void UpdateReviewStream(FLAME_Instance* flame) {
@@ -267,19 +261,14 @@ namespace FLAME_Protocol {
     	    }
     	    else {
 
-    	        if (flame->active) {
-    	            DEBUG_PRINTF("Control packet timeout");
+    	        if (!flame->safetyMode) {
+    	            DEBUG_PRINTF("Control packet timeout, entering safety mode");
     	        }
 
-    	        flame->active = false;
+    	        flame->safetyMode = true;
     	    }
 
             flame->reviewPacketCount++;
-
-            //if (flame->reviewPacketCount % 50 == 0) {
-            //    DEBUG_PRINTF("Bad packets: ");
-            //    DEBUG_PRINTF("%d", flame->badPackets);
-            //}
     	}
 	}
 
