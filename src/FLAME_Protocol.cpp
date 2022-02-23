@@ -241,7 +241,7 @@ namespace FLAME_Protocol {
         flame->reviewPacket.data = *(flame->registers + endpointID);
         endpointID++;
 
-        if (endpointID > sizeof(flame->registers) / sizeof(flame->registers[0])) {
+        if (endpointID >= sizeof(flame->registers) / sizeof(flame->registers[0])) {
             endpointID = 0;
         }
 	}
