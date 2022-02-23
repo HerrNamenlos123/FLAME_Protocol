@@ -189,17 +189,17 @@ namespace FLAME_Protocol {
 	    flame->lastControlPacket = getMicros();
 	
 	    if (!flame->active) {
-	        DEBUG_PRINT("Stream resumed");
+	        DEBUG_PRINTF("Stream resumed");
 	    }
 	    flame->active = true;      // fix me
 
-	    //DEBUG_PRINT("Control packet received");
+	    //DEBUG_PRINTF("Control packet received");
 
 	}
 
 	void discoveryPacketReceived(FLAME_Instance* flame) {
 
-	    DEBUG_PRINT("Discovery packet received");
+	    DEBUG_PRINTF("Discovery packet received");
 
 		flame->discoveryResponse.ipAddress = getLocalIP();
 
@@ -260,7 +260,7 @@ namespace FLAME_Protocol {
     	    else {
 
     	        if (flame->active) {
-    	            DEBUG_PRINT("Control packet timeout");
+    	            DEBUG_PRINTF("Control packet timeout");
     	        }
 
     	        flame->active = false;
@@ -269,8 +269,8 @@ namespace FLAME_Protocol {
             flame->reviewPacketCount++;
 
             if (flame->reviewPacketCount % 50 == 0) {
-                DEBUG_PRINT("Bad packets: ");
-                DEBUG_PRINT("%d", flame->badPackets);
+                DEBUG_PRINTF("Bad packets: ");
+                DEBUG_PRINTF("%d", flame->badPackets);
             }
     	}
 	}

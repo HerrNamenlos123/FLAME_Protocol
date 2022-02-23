@@ -57,17 +57,18 @@
 #if defined(ARDUINO) && ARDUINO >= 100		// if Arduino
 	#include "Arduino.h"
 	#ifdef FLAME_DEBUG
-		#define DEBUG_PRINT(...) Serial.println(__VA_ARGS__)
+		//#define DEBUG_PRINT(...) Serial.println(__VA_ARGS__)
+		#define DEBUG_PRINTF(fmt, ...) { char buffer[64]; sprintf(buffer, fmt "\n", ##__VA_ARGS__); Serial.println(buffer); }
 	#else
-		#define DEBUG_PRINT()
+		#define DEBUG_PRINTF()
 	#endif
 #else										// if not Arduino
 	#include <cstring>
 	#include <stdio.h>
 	#ifdef FLAME_DEBUG
-		#define DEBUG_PRINT(msg, ...) printf(msg "\n", __VA_ARGS__)
+		#define DEBUG_PRINTF(fmt, ...) printf(fmt "\n", ##__VA_ARGS__)
 	#else
-		#define DEBUG_PRINT()
+		#define DEBUG_PRINTF()
 	#endif
 #endif
 
