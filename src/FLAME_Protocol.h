@@ -211,7 +211,7 @@ namespace FLAME_Protocol {
 		ReviewPacket reviewPacket;
 		DiscoveryResponse discoveryResponse;
 
-		uint32_t registers[15];
+		uint32_t registers[19];
 
 		Endpoint<float> desiredAxis1 = registers + 0;
 		Endpoint<float> desiredAxis2 = registers + 1;
@@ -231,6 +231,13 @@ namespace FLAME_Protocol {
 		Endpoint<bool> odrive1Error = registers + 13;	
 
 		Endpoint<bool> safetyMode = registers + 14;
+		Endpoint<bool> odrv0ErrorState = registers + 15;
+		Endpoint<bool> odrv0ClearErrors = registers + 16;
+		Endpoint<bool> odrv1ErrorState = registers + 17;
+		Endpoint<bool> odrv1ClearErrors = registers + 18;
+
+
+
 
 		uint32_t badPackets = 0;
 		uint32_t controllerIP = 0;
