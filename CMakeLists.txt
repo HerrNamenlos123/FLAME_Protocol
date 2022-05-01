@@ -5,22 +5,26 @@ project(FLAME_Protocol VERSION 1.0.0 LANGUAGES CXX)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 list(APPEND CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
 
+
+
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose Release or Debug" FORCE)
 endif()
-
-
-################
-# Dependencies #
-################
-
-#find_package(spdlog REQUIRED)
 
 
 
 ##################################
 # Options: Library configuration #
 ##################################
+
+
+
+
+
+################
+# Dependencies #
+################
+
 
 
 
@@ -33,15 +37,20 @@ file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*")
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS "src/*")
 
 add_library(${PROJECT_NAME} STATIC ${SRC_FILES} ${HEADER_FILES})
-target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
-set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
 
 target_include_directories(${PROJECT_NAME} PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
 
+if(MSVC)
+    set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+else()
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-psabi)
+endif()
 
 
 ############################
@@ -59,12 +68,16 @@ endif()
 
 
 
-
 ###########
 # Linking #
 ###########
 
-#target_link_libraries(${PROJECT_NAME} spdlog::spdlog)
+
+
+
+#######################
+# Precompiled Headers #
+#######################
 
 
 
@@ -77,6 +90,12 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${SRC_FILES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include" PREFIX "Header Files" FILES ${HEADER_FILES})
+
+
+##################
+# Subdirectories #
+##################
+
 
 
 
@@ -103,7 +122,7 @@ install(
 
 # Install headers
 install(
-    DIRECTORY src/
+    DIRECTORY include/
     DESTINATION "include"
     FILES_MATCHING PATTERN "*.h*"
 )
