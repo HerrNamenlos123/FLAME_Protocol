@@ -1,5 +1,7 @@
 # FLAME_Protocol
 
+`git clone --recursive https://github.com/HerrNamenlos123/FLAME_Protocol.git`
+
 ## Arduino
 
 ```C++
