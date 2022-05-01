@@ -1,0 +1,1 @@
+#include "../modules/nanopb/pb_common.h"

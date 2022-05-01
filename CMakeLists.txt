@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(FLAME_Protocol VERSION 1.0.0 LANGUAGES CXX)
+project(FLAME_Protocol VERSION 1.0.0 LANGUAGES C CXX)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 list(APPEND CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
@@ -33,15 +33,9 @@ endif()
 # Static library definition #
 #############################
 
-file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*")
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS "src/*")
 
-add_library(${PROJECT_NAME} STATIC ${SRC_FILES} ${HEADER_FILES})
-
-target_include_directories(${PROJECT_NAME} PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-)
+add_library(${PROJECT_NAME} STATIC ${SRC_FILES})
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
@@ -89,7 +83,6 @@ endif()
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${SRC_FILES})
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include" PREFIX "Header Files" FILES ${HEADER_FILES})
 
 
 ##################
