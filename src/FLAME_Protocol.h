@@ -73,6 +73,8 @@
 	#endif
 #endif
 
+#include "pb.h"
+
 
 // These functions must be defined by the user
 uint32_t getMicros();
