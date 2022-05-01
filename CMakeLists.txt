@@ -34,10 +34,15 @@ endif()
 #############################
 
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS "src/*")
+file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*")
+file(GLOB_RECURSE CONFIG_FILES CONFIGURE_DEPENDS "cmake/*")
+list(APPEND CONFIG_FILES "${CMAKE_SOURCE_DIR}/CMakeLists.txt")
+list(APPEND CONFIG_FILES "${CMAKE_SOURCE_DIR}/library.properties")
 
-add_library(${PROJECT_NAME} STATIC ${SRC_FILES})
+add_library(${PROJECT_NAME} STATIC ${SRC_FILES} ${HEADER_FILES} ${CONFIG_FILES})
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
+set_target_properties(${PROJECT_NAME} PROPERTIES C_STANDARD 11)
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
 
 if(MSVC)
@@ -82,7 +87,9 @@ endif()
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${SRC_FILES})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "src" FILES ${SRC_FILES})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include" PREFIX "include" FILES ${HEADER_FILES})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${CONFIG_FILES})
 
 
 ##################
