@@ -1,13 +1,18 @@
 
 #include <SPI.h>
 #include <Ethernet.h>
-#include <FLAME_Protocol.h>
+#include "FLAME_Protocol.h"
+
+int cnt = 0;
 
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-uint8_t udpBuffer[FLAME_PROTOCOL_MAX_PACKET_LENGTH];
+uint8_t udpBuffer[FLAME_PROTOCOL_BUFFER_SIZE];
 EthernetUDP server;
 
-FLAME_Protocol::FLAME_Instance flameInstance;
+static inline size_t stack_size()
+{
+    return RAMEND - SP;
+}
 
 uint32_t getMicros() {
     return micros();
@@ -29,11 +34,12 @@ void updateUDP() {
     int packetSize = server.parsePacket();
     if (packetSize != 0) {
         server.read(udpBuffer, sizeof(udpBuffer));
-        FLAME_Protocol::PacketReceived(&flameInstance, udpBuffer, packetSize, server.remoteIP());
+        //Serial.println("Packet received");
+        FLAME_Protocol::packetReceived(udpBuffer, packetSize, server.remoteIP(), server.remotePort());
     }
 
     // Send the Review packet
-    FLAME_Protocol::UpdateReviewStream(&flameInstance);
+    FLAME_Protocol::update();
 }
 
 void setup() {
@@ -57,7 +63,7 @@ void setup() {
     Serial.print("Connected with IP: ");
     Serial.println(Ethernet.localIP());
     
-    server.begin(flameInstance.receiverPort);
+    server.begin(FLAME_PROTOCOL_UDP_TARGET_PORT);
 
 }
 

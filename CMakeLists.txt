@@ -38,8 +38,18 @@ file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*")
 file(GLOB_RECURSE CONFIG_FILES CONFIGURE_DEPENDS "cmake/*")
 list(APPEND CONFIG_FILES "${CMAKE_SOURCE_DIR}/CMakeLists.txt")
 list(APPEND CONFIG_FILES "${CMAKE_SOURCE_DIR}/library.properties")
+list(APPEND CONFIG_FILES "${CMAKE_SOURCE_DIR}/FLAME.proto")
+list(APPEND CONFIG_FILES "${CMAKE_SOURCE_DIR}/examples/FLAME/FLAME.ino")
 
 add_library(${PROJECT_NAME} STATIC ${SRC_FILES} ${HEADER_FILES} ${CONFIG_FILES})
+
+target_include_directories(${PROJECT_NAME} PRIVATE "src")
+target_include_directories(${PROJECT_NAME} PRIVATE "proto")
+
+target_include_directories(${PROJECT_NAME} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
 set_target_properties(${PROJECT_NAME} PROPERTIES C_STANDARD 11)
@@ -125,6 +135,16 @@ install(
     DIRECTORY include/
     DESTINATION "include"
     FILES_MATCHING PATTERN "*.h*"
+)
+
+install(
+    FILES 
+        "modules/nanopb/pb.h" 
+        "modules/nanopb/pb_common.h" 
+        "modules/nanopb/pb_encode.h" 
+        "modules/nanopb/pb_decode.h"
+        "proto/FLAME.pb.h"
+    DESTINATION "include"
 )
 
 install(

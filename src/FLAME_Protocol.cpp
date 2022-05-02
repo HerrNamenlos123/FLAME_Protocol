@@ -3,6 +3,16 @@
 
 namespace FLAME_Protocol {
 
+    FLAME_Wrapper wrapper = FLAME_Wrapper_init_zero;
+    FLAME_ControlPacket toMCU = FLAME_ControlPacket_init_zero;
+    FLAME_ReviewPacket toPC = FLAME_ReviewPacket_init_zero;
+    uint8_t buffer[FLAME_PROTOCOL_BUFFER_SIZE];
+
+    uint32_t mcu_ip = 0;
+    uint32_t pc_ip = 0;
+    uint32_t lastControlPacket = 0;
+    uint32_t lastReview = 0;
+
     uint16_t CRC16(uint8_t* data, size_t len) {
         uint16_t crc = 0x1337;
         static const uint16_t table[] = {
@@ -39,237 +49,129 @@ namespace FLAME_Protocol {
 
 
 
-
-
-    // ================================
-    // =====    CONTROL PACKET    =====
-    // ================================
-
-    void generatePacket(FLAME_Protocol::ControlPacket* controlPacket, uint8_t* buffer) {
-
-        memcpy(buffer + 0, &controlPacket->axis1, 4);
-        memcpy(buffer + 4, &controlPacket->axis2, 4);
-        memcpy(buffer + 8, &controlPacket->axis3, 4);
-        memcpy(buffer + 12, &controlPacket->axis4, 4);
-        memcpy(buffer + 16, &controlPacket->id, 1);
-        memcpy(buffer + 17, &controlPacket->additional, 4);
-
-        uint16_t crcValue = CRC16(buffer, 21);
-        memcpy(buffer + 21, &crcValue, 2);
-
-    }
-
-    bool parsePacket(FLAME_Protocol::ControlPacket* controlPacket, uint8_t* buffer) {
-
-        uint16_t crcCalculated = CRC16(buffer, 21);
-        uint16_t crcReceived = 0;
-        memcpy(&crcReceived, buffer + 21, 2);
-
-        if (crcCalculated != crcReceived) {
-            return false;
-        }
-
-        memcpy(&controlPacket->axis1, buffer + 0, 4);
-        memcpy(&controlPacket->axis2, buffer + 4, 4);
-        memcpy(&controlPacket->axis3, buffer + 8, 4);
-        memcpy(&controlPacket->axis4, buffer + 12, 4);
-        memcpy(&controlPacket->id, buffer + 16, 1);
-        memcpy(&controlPacket->additional, buffer + 17, 4);
-
-        return true;
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-    // ===============================
-    // =====    Review PACKET    =====
-    // ===============================
-
-    void generatePacket(FLAME_Protocol::ReviewPacket* reviewPacket, uint8_t* buffer) {
-
-        memcpy(buffer + 0, &reviewPacket->id, 1);
-        memcpy(buffer + 1, &reviewPacket->data, 4);
-
-        uint16_t crcValue = CRC16(buffer, 5);
-        memcpy(buffer + 5, &crcValue, 2);
-
-    }
-
-    bool parsePacket(FLAME_Protocol::ReviewPacket* reviewPacket, uint8_t* buffer) {
-
-        uint16_t crcCalculated = CRC16(buffer, 5);
-        uint16_t crcReceived = 0;
-        memcpy(&crcReceived, buffer + 5, 2);
-
-        if (crcCalculated != crcReceived) {
-            return false;
-        }
-
-        memcpy(&reviewPacket->id, buffer, 1);
-        memcpy(&reviewPacket->data, buffer + 1, 4);
-
-        return true;
-    }
-
-
-
-
-
-
-
-
-    // ==================================
-    // =====    DISCOVERY PACKET    =====
-    // ==================================
-
-    void generatePacket(uint8_t* buffer) {
-        buffer[0] = FLAME_PROTOCOL_CONTROL_BYTE;
-    }
-
-    bool parsePacket(uint8_t* buffer) {
-        return buffer[0] == FLAME_PROTOCOL_CONTROL_BYTE;
-    }
-
-
-
-
-
-
-
-
-    // ===========================================
-    // =====    DISCOVERY RESPONSE PACKET    =====
-    // ===========================================
-
-    void generatePacket(FLAME_Protocol::DiscoveryResponse* discoveryResponse, uint8_t* buffer) {
-
-        memcpy(buffer, &discoveryResponse->ipAddress, 4);
-
-        uint16_t crcValue = CRC16(buffer, 4);
-        memcpy(buffer + 4, &crcValue, 2);
-
-    }
-
-    bool parsePacket(FLAME_Protocol::DiscoveryResponse* discoveryResponse, uint8_t* buffer) {
-
-        uint16_t crcCalculated = CRC16(buffer, 4);
-        uint16_t crcReceived = 0;
-        memcpy(&crcReceived, buffer + 4, 2);
-
-        if (crcCalculated != crcReceived) {
-            return false;
-        }
-
-        memcpy(&discoveryResponse->ipAddress, buffer, 4);
-
-        return true;
-    }
-
-
-
-
-
-
-
 	// ============================================
 	// =====    PROTOCOL PARSING FUNCTIONS    =====
 	// ============================================
 
-	void controlPacketReceived(FLAME_Instance* flame) {
+    void discoveryPacketReceived(uint32_t sourceIP) {      // On MCU
 
-	    flame->lastControlPacket = getMicros();
+#if defined(ARDUINO) && ARDUINO >= 100		// if Arduino
+        DEBUG_PRINTF("Discovery packet received");
+#else                                       // Non-Arduino
+        return;
+#endif
 
-        flame->desiredAxis1 = flame->controlPacket.axis1;
-        flame->desiredAxis2 = flame->controlPacket.axis2;
-        flame->desiredAxis3 = flame->controlPacket.axis3;
-        flame->desiredAxis4 = flame->controlPacket.axis4;
+        wrapper = FLAME_Wrapper_init_zero;
+        wrapper.discoveryResponse.ipAddress = getLocalIP();
+        wrapper.has_discoveryResponse = true;
 
-        if (flame->controlPacket.id >= 0 && flame->controlPacket.id < sizeof(flame->registers) / sizeof(flame->registers[0])) {
-            flame->registers[flame->controlPacket.id] = flame->controlPacket.additional;
+        pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+        if (!pb_encode(&stream, FLAME_Wrapper_fields, &wrapper)) {
+            DEBUG_PRINTF("Failed to encode packet!");
+            return;
+        }
+        writeUDP(sourceIP, FLAME_PROTOCOL_UDP_TARGET_PORT, buffer, stream.bytes_written);
+    }
+
+	void packetReceived(const uint8_t* packet, uint8_t length, uint32_t sourceIP, uint16_t sourcePort) {
+        
+        wrapper = FLAME_Wrapper_init_zero;
+        pb_istream_t stream = pb_istream_from_buffer(packet, length);
+        if (!pb_decode(&stream, FLAME_Wrapper_fields, &wrapper)) {
+            toPC.badPackets++;
+            return;
         }
 
-	}
-
-	void discoveryPacketReceived(FLAME_Instance* flame) {
-
-	    DEBUG_PRINTF("Discovery packet received");
-
-		flame->discoveryResponse.ipAddress = getLocalIP();
-	    FLAME_Protocol::generatePacket(&flame->discoveryResponse, flame->packetBuffer);
-		writeUDP(flame->controllerIP, flame->controllerPort, flame->packetBuffer, FLAME_PROTOCOL_DISCOVERY_RESPONSE_LENGTH);
-	}
-
-	void PacketReceived(FLAME_Instance* flame, uint8_t* buffer, uint8_t length, uint32_t controllerIP) {
-		
-        // Interpret the packet
-        if (length == FLAME_PROTOCOL_CONTROL_PACKET_LENGTH) {
-            if (FLAME_Protocol::parsePacket(&flame->controlPacket, buffer)) {
-				flame->controllerIP = controllerIP;
-                controlPacketReceived(flame);
-            }
-            else {
-                flame->badPackets++;
-            }
+        if (wrapper.has_discoveryResponse) {        // On PC
+            mcu_ip = sourceIP;
         }
-        else if (length == FLAME_PROTOCOL_DISCOVERY_PACKET_LENGTH) {
-            if (FLAME_Protocol::parsePacket(buffer)) {
-				flame->controllerIP = controllerIP;
-                discoveryPacketReceived(flame);
-            }
-            else {
-                flame->badPackets++;
-            }
+
+        if (wrapper.has_reviewPacket) {             // On PC
+            toPC = wrapper.reviewPacket;
         }
-        else {
-            flame->badPackets++;
+
+        if (wrapper.has_discoveryPacket) {      // On MCU
+            discoveryPacketReceived(sourceIP);
+        }
+
+        if (wrapper.has_controlPacket) {        // On MCU
+            lastControlPacket = getMicros();
+            pc_ip = sourceIP;
+            toMCU = wrapper.controlPacket;
         }
 	}
 
-	void makeReviewPacket(FLAME_Instance* flame) {
-        static uint8_t endpointID = 0;
+    void sendReviewPacket() {   // To PC
 
-		flame->reviewPacket.id = endpointID;
-        flame->reviewPacket.data = *(flame->registers + endpointID);
-        endpointID++;
+        if (pc_ip == 0)
+            return;
 
-        if (endpointID >= sizeof(flame->registers) / sizeof(flame->registers[0])) {
-            endpointID = 0;
+        wrapper = FLAME_Wrapper_init_zero;
+        wrapper.reviewPacket = toPC;
+        wrapper.has_reviewPacket = true;
+
+        pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+        if (!pb_encode(&stream, FLAME_Wrapper_fields, &wrapper)) {
+            DEBUG_PRINTF("Failed to encode packet!");
+            return;
         }
-	}
+        writeUDP(pc_ip, FLAME_PROTOCOL_UDP_TARGET_PORT, buffer, stream.bytes_written);
+    }
 
-	void UpdateReviewStream(FLAME_Instance* flame) {
+    void sendDiscoveryPacket(uint32_t broadcastIP) {    // To MCU
+
+        if (broadcastIP == 0)
+            return;
+
+        wrapper = FLAME_Wrapper_init_zero;
+        wrapper.has_discoveryPacket = true;
+
+        pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+        if (!pb_encode(&stream, FLAME_Wrapper_fields, &wrapper)) {
+            DEBUG_PRINTF("Failed to encode packet!");
+            return;
+        }
+        writeUDPBroadcast(broadcastIP, FLAME_PROTOCOL_UDP_TARGET_PORT, buffer, stream.bytes_written);
+    }
+
+    void sendControlPacket() {    // To MCU
+
+        if (mcu_ip == 0)
+            return;
+
+        wrapper = FLAME_Wrapper_init_zero;
+        wrapper.controlPacket = toMCU;
+        wrapper.has_controlPacket = true;
+
+        pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+        if (!pb_encode(&stream, FLAME_Wrapper_fields, &wrapper)) {
+            DEBUG_PRINTF("Failed to encode packet!");
+            return;
+        }
+        writeUDP(mcu_ip, FLAME_PROTOCOL_UDP_TARGET_PORT, buffer, stream.bytes_written);
+    }
+
+	void update() {
 
 		uint32_t now = getMicros();
-		if (now - flame->lastReview >= flame->reviewCycleTime) {
-    	    flame->lastReview = now;
-	
-    	    if (now - flame->lastControlPacket < flame->controlPacketTimeout) {
+		if (now - lastReview >= FLAME_PROTOCOL_REVIEW_CYCLE_TIME) {
+    	    lastReview = now;
 
-    	        makeReviewPacket(flame);
-
-    	        FLAME_Protocol::generatePacket(&flame->reviewPacket, flame->packetBuffer);
-    	        writeUDP(flame->controllerIP, flame->controllerPort, flame->packetBuffer, FLAME_PROTOCOL_REVIEW_PACKET_LENGTH);
+    	    if (now - lastControlPacket < FLAME_PROTOCOL_CONTROL_PACKET_TIMEOUT) {
+                sendReviewPacket();
     	    }
     	    else {
-
-    	        if (!flame->safetyMode) {
+    	        if (!toPC.safetyMode) {
     	            DEBUG_PRINTF("Control packet timeout, entering safety mode");
     	        }
-
-    	        flame->safetyMode = true;
+                toPC.safetyMode = true;
     	    }
 
-            flame->reviewPacketCount++;
+            if (toPC.safetyMode && toMCU.clearSafetyMode) {
+                DEBUG_PRINTF("Safety mode disabled by controller");
+                toMCU.clearSafetyMode = false;
+                toPC.safetyMode = false;
+            }
     	}
 	}
-
 }

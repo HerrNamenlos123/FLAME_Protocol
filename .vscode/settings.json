@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "*.cmake.in": "cmake",
+        "flame_protocol.h": "c"
+    }
+}
