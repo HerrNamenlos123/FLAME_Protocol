@@ -1,24 +1,15 @@
-/*
-#include "timer.h"
-#include "Endpoints.h"
-#include "Utility.h"
-#include "ODrive.h"
-#include "Process.h"
+
+#include "Arduino.h"
+#include "ODriveBackend.h"
+#include "process.h"
 
 #include <SPI.h>
 #include <Ethernet.h>
 #include <FLAME_Protocol.h>
 
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-uint8_t udpBuffer[FLAME_PROTOCOL_MAX_PACKET_LENGTH];
+uint8_t udpBuffer[256];
 EthernetUDP server;
-
-uint32_t lastCycle = 0;
-uint32_t cycleTime = 10000;
-
-FLAME_Protocol::FLAME_Instance flameInstance;
-extern ODrive odrv0;
-extern ODrive odrv1;
 
 uint32_t getMicros() {
     return micros();
@@ -40,25 +31,22 @@ void updateUDP() {
     int packetSize = server.parsePacket();
     if (packetSize != 0) {
         server.read(udpBuffer, sizeof(udpBuffer));
-        FLAME_Protocol::PacketReceived(&flameInstance, udpBuffer, packetSize, server.remoteIP());
+        FLAME_Protocol::packetReceived(udpBuffer, packetSize, server.remoteIP(), server.remotePort());
     }
 
     // Send the Review packet
-    FLAME_Protocol::UpdateReviewStream(&flameInstance);
+    FLAME_Protocol::update();
 }
 
 void setup() {
     Serial.begin(115200);
-    odrv0.serialBegin();
-    odrv1.serialBegin();
-
     Serial.println("Connecting...");
     
     Ethernet.init(53);
 
     bool staticIP = true;
     if (staticIP) {
-        IPAddress ip(192, 168, 25, 2);
+        IPAddress ip(10, 0, 0, 50);
         Ethernet.begin(mac, ip);
     }
     else {
@@ -75,25 +63,16 @@ void setup() {
     Serial.print("Connected with IP: ");
     Serial.println(Ethernet.localIP());
     
-    server.begin(flameInstance.receiverPort);
-}
-
-*/
-
-#include "Arduino.h"
-#include "ODriveBackend.h"
-#include "process.h"
-
-void setup() {
-    Serial.begin(115200);
-    Serial.println("Starting");
+    server.begin(FLAME_PROTOCOL_UDP_TARGET_PORT);
 
     setupODrives();
+    startProcess();
 }
 
 void loop() {
     
     updateProcess();
     updateODrives();
+    updateUDP();
 
 }

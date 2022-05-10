@@ -4,6 +4,7 @@
 
 #include "Arduino.h"
 
+void startProcess();
 void updateProcess();
 
 #endif // PROCESS_H
