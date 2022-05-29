@@ -3,350 +3,307 @@
 #include "ODrive.h"
 #include "Config.h"
 #include "FLAME_Protocol.h"
-#include "ODriveBackend.h"
-
-#define ENDSTOP_OFFSET_AXIS0 -0.5
-#define ENDSTOP_OFFSET_AXIS1 0.5
-#define ENDSTOP_OFFSET_AXIS2 0
-#define ENDSTOP_OFFSET_AXIS3 0
-
-#define CALIBRATION_CURRENT 30.f
-#define DRIVE_CURRENT 50.f
-#define MOTOR_TORQUE_CONSTANT (8.27f / 150.f)
-
-#define TR_HOMING_ACCEL 2.f
-#define TR_HOMING_VEL 2.f
-#define TR_HOMING_DECEL 2.f
-#define TR_HOMING_POS_OVER_ENDSTOP 0.5f    // Rotations
-#define HOMING_SPEED 0.05
-
-#define GAIN_P 130.f
-#define GAIN_I 0.5f
-#define GAIN_D 0.2f
+#include "endpoints.h"
 
 auto& rx = FLAME_Protocol::toMCU;
 auto& tx = FLAME_Protocol::toPC;
-static auto odrv0 = &odrvData0;
-static auto odrv1 = &odrvData1;
 
 uint32_t ignoreStart = 0;
 uint32_t ignorePeriod = 0;
 uint32_t calibrationStarted = 0;
 
-enum class State {
-    DISCONNECTED,
-    CLEAR_ENDSTOPS,
-    CLEAR_ERRORS,
-    ERROR,
-    ERROR_UNRECOVERABLE,
-    UNCONFIGURED,
-    IDLE_UNHOMED,
-    MOVE_OVER_ENDSTOP,
-    WAIT_CALIBRATION_START,
-    CALIBRATION,
-    CALIBRATION_DONE,
-    ENABLE_ENDSTOPS,
-    START_HOMING,
-    HOMING,
-    IDLE,
-    RUN,
-    ERROR_WAIT_FOREVER,
-    CLOSED_LOOP
-};
+ODrive odrv0(Serial1);
+ODrive odrv1(Serial2);
 
-enum State state = State::DISCONNECTED;
+// AXIS STATE
+#define AXIS_STATE_UNDEFINED 0
+#define AXIS_STATE_IDLE 1
+#define AXIS_STATE_STARTUP_SEQUENCE 2
+#define AXIS_STATE_FULL_CALIBRATION_SEQUENCE 3
+#define AXIS_STATE_MOTOR_CALIBRATION 4
+#define AXIS_STATE_ENCODER_INDEX_SEARCH 6
+#define AXIS_STATE_ENCODER_INDEX_OFFSET_CALIBRATION 7
+#define AXIS_STATE_CLOSED_LOOP_CONTROL 8
+#define AXIS_STATE_LOCKIN_SPIN 9
+#define AXIS_STATE_ENCODER_DIR_FIND 10
+#define AXIS_STATE_HOMING 11
+#define AXIS_STATE_ENCODER_HALL_POLARITY_CALIBRATION 12
+#define AXIS_STATE_ENCODER_HALL_PHASE_CALIBRATION 13
 
-void ignoreFor(uint32_t milliseconds) {
-    ignoreStart = millis();
-    ignorePeriod = milliseconds;
-}
+// INPUT MODE
+#define INPUT_MODE_INACTIVE 0
+#define INPUT_MODE_PASSTHROUGH 1
+#define INPUT_MODE_VEL_RAMP 2
+#define INPUT_MODE_POS_FILTER 3
+#define INPUT_MODE_MIX_CHANNELS 4
+#define INPUT_MODE_TRAP_TRAJ 5
+#define INPUT_MODE_TORQUE_RAMP 6
+#define INPUT_MODE_MIRROR 7
+#define INPUT_MODE_TUNING 8
 
-void checkClosedLoop(ODriveProperties* odrv, bool* errorVar) {
-    if (odrv->axis0.current_state == AXIS_STATE_CLOSED_LOOP_CONTROL) {
-        if (tx.safetyMode) 
-            odrv->axis0.controller_config_input_mode = INPUT_MODE_TRAP_TRAJ;
-        else 
-            odrv->axis0.controller_config_input_mode = INPUT_MODE_POS_FILTER;
+template<uint16_t jsonCRC, uint16_t endpointID, typename T>
+T __READ(ODrive& odrive, T _default) {
+    T value;
+    if (!odrive.read<jsonCRC, endpointID, T>(&value)) {
+        return _default;
     }
-    else {
-        *errorVar = true;
+
+    return value;
+}
+
+#define SET(odrive, endpoint, value) odrive.write<endpoint>(value, false)
+#define READ(odrive, endpoint, default_val) __READ<endpoint>(odrive, default_val)
+
+void loadCommonSettings(ODrive& odrv) {
+
+    // End stops
+    SET(odrv, ENDPOINT_AXIS0_MIN_ENDSTOP_CONFIG_ENABLED, false);
+    SET(odrv, ENDPOINT_AXIS1_MIN_ENDSTOP_CONFIG_ENABLED, false);
+    SET(odrv, ENDPOINT_AXIS0_MIN_ENDSTOP_CONFIG_IS_ACTIVE_HIGH, true);
+    SET(odrv, ENDPOINT_AXIS1_MIN_ENDSTOP_CONFIG_IS_ACTIVE_HIGH, true);
+
+    // Motors
+    SET(odrv, ENDPOINT_AXIS0_MOTOR_CONFIG_CALIBRATION_CURRENT, MOTOR_CALIBRATION_CURRENT);
+    SET(odrv, ENDPOINT_AXIS1_MOTOR_CONFIG_CALIBRATION_CURRENT, MOTOR_CALIBRATION_CURRENT);
+    SET(odrv, ENDPOINT_AXIS0_MOTOR_CONFIG_CURRENT_LIM, MOTOR_DRIVE_CURRENT);
+    SET(odrv, ENDPOINT_AXIS1_MOTOR_CONFIG_CURRENT_LIM, MOTOR_DRIVE_CURRENT);
+    SET(odrv, ENDPOINT_AXIS0_MOTOR_CONFIG_POLE_PAIRS, MOTOR_POLE_PAIRS);
+    SET(odrv, ENDPOINT_AXIS1_MOTOR_CONFIG_POLE_PAIRS, MOTOR_POLE_PAIRS);
+    SET(odrv, ENDPOINT_AXIS0_MOTOR_CONFIG_TORQUE_CONSTANT, MOTOR_TORQUE_CONSTANT);
+    SET(odrv, ENDPOINT_AXIS1_MOTOR_CONFIG_TORQUE_CONSTANT, MOTOR_TORQUE_CONSTANT);
+    SET(odrv, ENDPOINT_AXIS0_CONTROLLER_CONFIG_ENABLE_OVERSPEED_ERROR, false);
+    SET(odrv, ENDPOINT_AXIS1_CONTROLLER_CONFIG_ENABLE_OVERSPEED_ERROR, false);
+    SET(odrv, ENDPOINT_AXIS0_CONFIG_CALIBRATION_LOCKIN_CURRENT, MOTOR_CALIBRATION_CURRENT);
+    SET(odrv, ENDPOINT_AXIS1_CONFIG_CALIBRATION_LOCKIN_CURRENT, MOTOR_CALIBRATION_CURRENT);
+    SET(odrv, ENDPOINT_AXIS0_CONFIG_CALIBRATION_LOCKIN_VEL, MOTOR_INDEX_SEARCH_LOCKIN_SPEED);
+    SET(odrv, ENDPOINT_AXIS1_CONFIG_CALIBRATION_LOCKIN_VEL, -MOTOR_INDEX_SEARCH_LOCKIN_SPEED);
+    
+    SET(odrv, ENDPOINT_AXIS0_CONTROLLER_CONFIG_POS_GAIN, MOTOR_GAIN_P);
+    SET(odrv, ENDPOINT_AXIS1_CONTROLLER_CONFIG_POS_GAIN, MOTOR_GAIN_P);
+    SET(odrv, ENDPOINT_AXIS0_CONTROLLER_CONFIG_VEL_INTEGRATOR_GAIN, MOTOR_GAIN_I);
+    SET(odrv, ENDPOINT_AXIS1_CONTROLLER_CONFIG_VEL_INTEGRATOR_GAIN, MOTOR_GAIN_I);
+    SET(odrv, ENDPOINT_AXIS0_CONTROLLER_CONFIG_VEL_GAIN, MOTOR_GAIN_D);
+    SET(odrv, ENDPOINT_AXIS1_CONTROLLER_CONFIG_VEL_GAIN, MOTOR_GAIN_D);
+
+    // Encoder
+    SET(odrv, ENDPOINT_AXIS0_ENCODER_CONFIG_CPR, ENCODER_CPR);
+    SET(odrv, ENDPOINT_AXIS1_ENCODER_CONFIG_CPR, ENCODER_CPR);
+
+}
+
+void loadSpecificSettings() {
+
+    SET(odrv0, ENDPOINT_AXIS0_MIN_ENDSTOP_CONFIG_GPIO_NUM, END_STOP_GPIO_AXIS0);
+    SET(odrv0, ENDPOINT_AXIS1_MIN_ENDSTOP_CONFIG_GPIO_NUM, END_STOP_GPIO_AXIS1);
+    SET(odrv1, ENDPOINT_AXIS0_MIN_ENDSTOP_CONFIG_GPIO_NUM, END_STOP_GPIO_AXIS2);
+    SET(odrv1, ENDPOINT_AXIS1_MIN_ENDSTOP_CONFIG_GPIO_NUM, END_STOP_GPIO_AXIS3);
+
+    SET(odrv0, ENDPOINT_AXIS0_MIN_ENDSTOP_CONFIG_OFFSET, END_STOP_OFFSET_AXIS0);
+    SET(odrv0, ENDPOINT_AXIS1_MIN_ENDSTOP_CONFIG_OFFSET, END_STOP_OFFSET_AXIS1);
+    SET(odrv1, ENDPOINT_AXIS0_MIN_ENDSTOP_CONFIG_OFFSET, END_STOP_OFFSET_AXIS2);
+    SET(odrv1, ENDPOINT_AXIS1_MIN_ENDSTOP_CONFIG_OFFSET, END_STOP_OFFSET_AXIS3);
+
+}
+
+bool closedLoop() {     // If any of the 4 axes is in closed loop mode (or reading fails)
+    int32_t state;
+    if (READ(odrv0, ENDPOINT_AXIS0_CURRENT_STATE, AXIS_STATE_CLOSED_LOOP_CONTROL) == AXIS_STATE_CLOSED_LOOP_CONTROL) return true;
+    if (READ(odrv0, ENDPOINT_AXIS1_CURRENT_STATE, AXIS_STATE_CLOSED_LOOP_CONTROL) == AXIS_STATE_CLOSED_LOOP_CONTROL) return true;
+    //if (!READ(odrv1, ENDPOINT_AXIS0_CURRENT_STATE, AXIS_STATE_CLOSED_LOOP_CONTROL) == AXIS_STATE_CLOSED_LOOP_CONTROL) return true;
+    //if (!READ(odrv1, ENDPOINT_AXIS1_CURRENT_STATE, AXIS_STATE_CLOSED_LOOP_CONTROL) == AXIS_STATE_CLOSED_LOOP_CONTROL) return true;
+    return false;
+}
+
+bool precalibrated() {      // If all motors and encoders are precalibrated and all readings are valid
+    if (!READ(odrv0, ENDPOINT_AXIS0_MOTOR_CONFIG_PRE_CALIBRATED, false)) return false;
+    //if (!READ(odrv0, ENDPOINT_AXIS1_MOTOR_CONFIG_PRE_CALIBRATED, false)) return false;
+    //if (!READ(odrv1, ENDPOINT_AXIS0_MOTOR_CONFIG_PRE_CALIBRATED, false)) return false;
+    //if (!READ(odrv1, ENDPOINT_AXIS1_MOTOR_CONFIG_PRE_CALIBRATED, false)) return false;
+    if (!READ(odrv0, ENDPOINT_AXIS0_ENCODER_CONFIG_PRE_CALIBRATED, false)) return false;
+    //if (!READ(odrv0, ENDPOINT_AXIS1_ENCODER_CONFIG_PRE_CALIBRATED, false)) return false;
+    //if (!READ(odrv1, ENDPOINT_AXIS0_ENCODER_CONFIG_PRE_CALIBRATED, false)) return false;
+    //if (!READ(odrv1, ENDPOINT_AXIS1_ENCODER_CONFIG_PRE_CALIBRATED, false)) return false;
+    return true;
+}
+
+bool anyErrors() {
+    uint32_t error = 0;
+    error |= READ(odrv0, ENDPOINT_AXIS0_ERROR, 0);
+    error |= READ(odrv0, ENDPOINT_AXIS0_MOTOR_ERROR, 0);
+    error |= READ(odrv0, ENDPOINT_AXIS0_ENCODER_ERROR, 0);
+    error |= READ(odrv0, ENDPOINT_AXIS0_CONTROLLER_ERROR, 0);
+    error |= READ(odrv0, ENDPOINT_AXIS1_ERROR, 0);
+    error |= READ(odrv0, ENDPOINT_AXIS1_MOTOR_ERROR, 0);
+    error |= READ(odrv0, ENDPOINT_AXIS1_ENCODER_ERROR, 0);
+    error |= READ(odrv0, ENDPOINT_AXIS1_CONTROLLER_ERROR, 0);
+    //error |= READ(odrv1, ENDPOINT_AXIS0_ERROR, 0);
+    //error |= READ(odrv1, ENDPOINT_AXIS0_MOTOR_ERROR, 0);
+    //error |= READ(odrv1, ENDPOINT_AXIS0_ENCODER_ERROR, 0);
+    //error |= READ(odrv1, ENDPOINT_AXIS0_CONTROLLER_ERROR, 0);
+    //error |= READ(odrv1, ENDPOINT_AXIS1_ERROR, 0);
+    //error |= READ(odrv1, ENDPOINT_AXIS1_MOTOR_ERROR, 0);
+    //error |= READ(odrv1, ENDPOINT_AXIS1_ENCODER_ERROR, 0);
+    //error |= READ(odrv1, ENDPOINT_AXIS1_CONTROLLER_ERROR, 0);
+    return error != 0;
+}
+
+void clearErrors() {
+    odrv0.write<ENDPOINT_AXIS0_CLEAR_ERRORS>(true);
+    odrv0.write<ENDPOINT_AXIS1_CLEAR_ERRORS>(true);
+}
+
+template<uint16_t endpointID_req, uint16_t endpointID_cur, uint16_t endpointID_endstop>
+bool home(ODrive& odrv, const char* str) {
+
+    Serial.print("Finding index on ");
+    Serial.println(str);
+    odrv.write<JSON_CRC, endpointID_req, int32_t>(AXIS_STATE_ENCODER_INDEX_SEARCH);
+    while (__READ<JSON_CRC, endpointID_cur, int32_t>(odrv, AXIS_STATE_UNDEFINED) != AXIS_STATE_IDLE);
+    odrv.write<JSON_CRC, endpointID_req, int32_t>(AXIS_STATE_CLOSED_LOOP_CONTROL);
+    if (anyErrors()) { Serial.println("Failed"); return false; }
+    Serial.println("done");
+
+    Serial.print("Homing ");
+    Serial.println(str);
+    odrv.write<JSON_CRC, endpointID_endstop, bool>(true);
+    delay(50);
+    odrv.write<JSON_CRC, endpointID_req, int32_t>(AXIS_STATE_HOMING);
+    while (__READ<JSON_CRC, endpointID_cur, int32_t>(odrv, AXIS_STATE_UNDEFINED) != AXIS_STATE_IDLE);
+    odrv.write<JSON_CRC, endpointID_req, int32_t>(AXIS_STATE_CLOSED_LOOP_CONTROL);
+    if (anyErrors()) { Serial.println("Failed"); return false; }
+    Serial.println("done");
+
+    return true;
+}
+
+bool home() {
+
+    if (!home<ENDPOINT_ID_AXIS0_REQUESTED_STATE, ENDPOINT_ID_AXIS0_CURRENT_STATE, ENDPOINT_ID_AXIS0_MIN_ENDSTOP_CONFIG_ENABLED>(
+        odrv0, "odrv0.axis0")) return false;
+    if (!home<ENDPOINT_ID_AXIS1_REQUESTED_STATE, ENDPOINT_ID_AXIS1_CURRENT_STATE, ENDPOINT_ID_AXIS1_MIN_ENDSTOP_CONFIG_ENABLED>(
+        odrv0, "odrv0.axis1")) return false;
+    //if (!home<ENDPOINT_ID_AXIS0_REQUESTED_STATE, ENDPOINT_ID_AXIS0_CURRENT_STATE, ENDPOINT_ID_AXIS0_MIN_ENDSTOP_CONFIG_ENABLED>(
+    //    odrv1, "odrv1.axis0")) return false;
+    //if (!home<ENDPOINT_ID_AXIS1_REQUESTED_STATE, ENDPOINT_ID_AXIS1_CURRENT_STATE, ENDPOINT_ID_AXIS1_MIN_ENDSTOP_CONFIG_ENABLED>(
+    //    odrv1, "odrv1.axis1")) return false;
+    
+    return true;
+}
+
+void initialize() {
+
+    Serial.println("Initializing odrives");
+
+    odrv0.begin(ODRIVE_BAUD_RATE);
+    odrv1.begin(ODRIVE_BAUD_RATE);
+
+    // First check if both odrives are available
+    while (true) {
+        float v;
+        if (odrv0.read<ENDPOINT_VBUS_VOLTAGE>(&v)) {
+            break;
+        }
+        Serial.println("ODrive 0 does not respond!");
+        delay(1000);
     }
-    if (odrv->axis1.current_state == AXIS_STATE_CLOSED_LOOP_CONTROL) {
-        if (tx.safetyMode) 
-            odrv->axis1.controller_config_input_mode = INPUT_MODE_TRAP_TRAJ;
-        else 
-            odrv->axis1.controller_config_input_mode = INPUT_MODE_POS_FILTER;
-    }
-    else {
-        *errorVar = true;
-    }
-}
+    //if (!odrv1.read<ENDPOINT_VBUS_VOLTAGE>(&v)) {
+    //    Serial.println("ODrive 1 does not respond!");
+    //    while (true);
+    //}
 
-void checkErrors() {
-    tx.odrive0Axis0Error = odrv0->axis0.error || odrv0->axis0.motor_error || odrv0->axis0.encoder_error || odrv0->axis0.controller_error;
-    tx.odrive0Axis1Error = odrv0->axis1.error || odrv0->axis1.motor_error || odrv0->axis1.encoder_error || odrv0->axis1.controller_error;
-    tx.odrive0Error = tx.odrive0Axis0Error || tx.odrive0Axis1Error;
+    // Check if it is already running
+    if (closedLoop()) {
+        Serial.println("At least one axis might be in closed loop mode. Please shut down and restart!");
+        Serial.println("Do you want to restart both odrives now? [Y/N]");
 
-    tx.odrive1Axis0Error = odrv1->axis0.error || odrv1->axis0.motor_error || odrv1->axis0.encoder_error || odrv1->axis0.controller_error;
-    tx.odrive1Axis1Error = odrv1->axis1.error || odrv1->axis1.motor_error || odrv1->axis1.encoder_error || odrv1->axis1.controller_error;
-    tx.odrive1Error = tx.odrive1Axis0Error || tx.odrive1Axis1Error;
-
-    if ((tx.odrive0Error || tx.odrive1Error) && 
-        state != State::ERROR_UNRECOVERABLE && 
-        state != State::ERROR_WAIT_FOREVER && 
-        state != State::CLEAR_ENDSTOPS && 
-        state != State::CLEAR_ERRORS && 
-        state != State::DISCONNECTED) 
-    {
-        state = State::ERROR;
-    }
-}
-
-void checkSettings(ODriveProperties* odrv, const char* odrvString) {
-
-    if (state == State::ERROR || state == State::ERROR_UNRECOVERABLE || state == State::ERROR_WAIT_FOREVER)
-        return;
-
-    if (!odrv->axis0.motor_config_pre_calibrated) {
-        Serial.print(odrvString);
-        Serial.println(".axis0's motor is not precalibrated! Please calibrate manually");
-        state = State::ERROR_UNRECOVERABLE;
-    }
-    if (!odrv->axis1.motor_config_pre_calibrated) {
-        Serial.print(odrvString);
-        Serial.println(".axis1's motor is not precalibrated! Please calibrate manually");
-        state = State::ERROR_UNRECOVERABLE;
-    }
-}
-
-void setTrapTraj(Axis* axis, float accel, float vel, float decel) {
-    axis->controller_config_input_mode = INPUT_MODE_TRAP_TRAJ;
-    axis->trap_traj_config_accel_limit = accel;
-    axis->trap_traj_config_vel_limit = vel;
-    axis->trap_traj_config_decel_limit = decel;
-}
-
-void setInputPos(Axis* axis, float inputPos) {
-    axis->controller_input_pos = inputPos;
-}
-
-void setPID(Axis* axis, float p, float i, float d) {
-    axis->controller_config_pos_gain = p;
-    axis->controller_config_vel_integrator_gain = i;
-    axis->controller_config_vel_gain = d;
-}
-
-void setupEndstop(Axis* axis, bool enabled, uint16_t gpio, bool activeHigh, float offset) {
-    axis->min_endstop_config_enabled = enabled;
-    axis->min_endstop_config_gpio_num = gpio;
-    axis->min_endstop_config_is_active_high = activeHigh;
-    axis->min_endstop_config_offset = offset;
-}
-
-bool updateState() {
-
-    bool returnNow = false;
-
-    bool armed = false;
-    switch (state) {
-        case State::ERROR:
-            Serial.println("Error detected: ");
-            Serial.println(odrv0->axis0.error);
-            Serial.println(odrv0->axis0.motor_error);
-            Serial.println(odrv0->axis0.encoder_error);
-            Serial.println(odrv0->axis0.controller_error);
-            Serial.println(odrv0->axis1.error);
-            Serial.println(odrv0->axis1.motor_error);
-            Serial.println(odrv0->axis1.encoder_error);
-            Serial.println(odrv0->axis1.controller_error);
-            //state = State::DISCONNECTED;
-            //odrv0->axis0.clear_errors++;
-            //odrv0->axis1.clear_errors++;
-            ignoreFor(2000);
-            returnNow = true;
-            break;
-
-        case State::ERROR_UNRECOVERABLE:
-            Serial.println("Unrecoverable error detected, stopping machine");
-            state = State::ERROR_WAIT_FOREVER;
-            returnNow = true;
-            break;
-
-        case State::DISCONNECTED:
-
-            if (odrv0->axis0.current_state == AXIS_STATE_CLOSED_LOOP_CONTROL) armed = true;
-            if (odrv0->axis1.current_state == AXIS_STATE_CLOSED_LOOP_CONTROL) armed = true;
-            if (odrv1->axis0.current_state == AXIS_STATE_CLOSED_LOOP_CONTROL) armed = true;
-            if (odrv1->axis1.current_state == AXIS_STATE_CLOSED_LOOP_CONTROL) armed = true;
-            if (armed) {
-                Serial.println("Already armed! Not implemented, please unplug and restart machine!");
-                state = State::ERROR_UNRECOVERABLE;
-                returnNow = true;
-                while (true);
-                return;
-            }
-
-            setupEndstop(&odrv0->axis0, false, 3, true, ENDSTOP_OFFSET_AXIS0);
-            setupEndstop(&odrv0->axis1, false, 4, true, ENDSTOP_OFFSET_AXIS1);
-            setupEndstop(&odrv1->axis0, false, 3, true, ENDSTOP_OFFSET_AXIS2);
-            setupEndstop(&odrv1->axis1, false, 4, true, ENDSTOP_OFFSET_AXIS3);
-            state = State::CLEAR_ENDSTOPS;
-            Serial.println("Disabled endstops");
-            ignoreFor(800);
-            break;
-
-        case State::CLEAR_ENDSTOPS:
-            odrv0->axis0.clear_errors++;
-            odrv0->axis1.clear_errors++;
-            odrv1->axis0.clear_errors++;
-            odrv1->axis1.clear_errors++;
-            state = State::CLEAR_ERRORS;
-            Serial.println("Cleared errors");
-            ignoreFor(800);
-            break;
-
-        case State::CLEAR_ERRORS:
-            odrv0->axis0.requested_state = AXIS_STATE_ENCODER_INDEX_OFFSET_CALIBRATION;
-            odrv0->axis1.requested_state = AXIS_STATE_ENCODER_INDEX_OFFSET_CALIBRATION;
-            odrv1->axis0.requested_state = AXIS_STATE_ENCODER_INDEX_OFFSET_CALIBRATION;
-            odrv1->axis1.requested_state = AXIS_STATE_ENCODER_INDEX_OFFSET_CALIBRATION;
-            state = State::WAIT_CALIBRATION_START;
-            calibrationStarted = millis();
-            Serial.println("Waiting for odrives to approve calibration");
-            break;
-
-        case State::WAIT_CALIBRATION_START:
-            if (odrv0->axis0.current_state == AXIS_STATE_ENCODER_INDEX_OFFSET_CALIBRATION && 
-                odrv0->axis1.current_state == AXIS_STATE_ENCODER_INDEX_OFFSET_CALIBRATION) {
-                state = State::CALIBRATION;
-                Serial.println("Calibrating has started");
-            }
-            if (millis() - calibrationStarted > 10000) {
-                Serial.println("Timeout, odrives will not start calibrating");
-                odrv0->axis0.requested_state = AXIS_STATE_IDLE;
-                odrv0->axis1.requested_state = AXIS_STATE_IDLE;
-                odrv1->axis0.requested_state = AXIS_STATE_IDLE;
-                odrv1->axis1.requested_state = AXIS_STATE_IDLE;
-                state = State::ERROR_UNRECOVERABLE;
-                returnNow = true;
-            }
-            break;
-
-        case State::CALIBRATION:
-            if (odrv0->axis0.current_state == AXIS_STATE_IDLE && odrv0->axis1.current_state == AXIS_STATE_IDLE) {
-                Serial.println("Finished calibrating motor");
-                state = State::CALIBRATION_DONE;
-                ignoreFor(2000);
-                returnNow = true;
-            }
-            break;
-
-        case State::CALIBRATION_DONE:
-            setTrapTraj(&odrv0->axis0, TR_HOMING_ACCEL, TR_HOMING_VEL, TR_HOMING_DECEL);
-            setTrapTraj(&odrv0->axis1, TR_HOMING_ACCEL, TR_HOMING_VEL, TR_HOMING_DECEL);
-            setTrapTraj(&odrv1->axis0, TR_HOMING_ACCEL, TR_HOMING_VEL, TR_HOMING_DECEL);
-            setTrapTraj(&odrv1->axis1, TR_HOMING_ACCEL, TR_HOMING_VEL, TR_HOMING_DECEL);
-            setInputPos(&odrv0->axis0, 0);
-            setInputPos(&odrv0->axis1, 0);
-            setInputPos(&odrv1->axis0, 0);
-            setInputPos(&odrv1->axis1, 0);
-            Serial.println("Enabled trap traj");
-            state = State::IDLE_UNHOMED;
-            ignoreFor(2000);
-            returnNow = true;
-            break;
-
-        case State::IDLE_UNHOMED:
-            odrv0->axis0.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL;
-            odrv0->axis1.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL;
-            odrv1->axis0.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL;
-            odrv1->axis1.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL;
-            Serial.println("Enabled closed loop control");
-            state = State::MOVE_OVER_ENDSTOP;
-            ignoreFor(2000);
-            break;
-
-        case State::MOVE_OVER_ENDSTOP:
-            setInputPos(&odrv0->axis0, TR_HOMING_POS_OVER_ENDSTOP);
-            setInputPos(&odrv0->axis1, -TR_HOMING_POS_OVER_ENDSTOP);
-            setInputPos(&odrv1->axis0, TR_HOMING_POS_OVER_ENDSTOP);
-            setInputPos(&odrv1->axis1, TR_HOMING_POS_OVER_ENDSTOP);
-            Serial.println("Moving over endstop");
-            state = State::ENABLE_ENDSTOPS;
-            ignoreFor(4000);
-            break;
-
-        case State::ENABLE_ENDSTOPS:
-            setupEndstop(&odrv0->axis0, true, 3, true, ENDSTOP_OFFSET_AXIS0);
-            setupEndstop(&odrv0->axis1, true, 4, true, ENDSTOP_OFFSET_AXIS1);
-            setupEndstop(&odrv1->axis0, true, 3, true, ENDSTOP_OFFSET_AXIS2);
-            setupEndstop(&odrv1->axis1, true, 4, true, ENDSTOP_OFFSET_AXIS3);
-            Serial.println("Enabled endstops");
-            state = State::START_HOMING;
-            ignoreFor(500);
-            break;
-
-        case State::START_HOMING:
-            odrv0->axis0.requested_state = AXIS_STATE_HOMING;
-            odrv0->axis1.requested_state = AXIS_STATE_HOMING;
-            odrv1->axis0.requested_state = AXIS_STATE_HOMING;
-            odrv1->axis1.requested_state = AXIS_STATE_HOMING;
-            setInputPos(&odrv0->axis0, 0);
-            setInputPos(&odrv0->axis1, 0);
-            setInputPos(&odrv1->axis0, 0);
-            setInputPos(&odrv1->axis1, 0);
-            Serial.println("Homing");
-            state = State::HOMING;
-            break;
-
-        case State::HOMING:
-            if (odrv0->axis0.current_state == AXIS_STATE_IDLE) odrv0->axis0.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL;
-            if (odrv0->axis1.current_state == AXIS_STATE_IDLE) odrv0->axis1.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL;
-            if (odrv1->axis0.current_state == AXIS_STATE_IDLE) odrv1->axis0.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL;
-            if (odrv1->axis1.current_state == AXIS_STATE_IDLE) odrv1->axis1.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL;
-            
-            if (odrv0->axis0.current_state == AXIS_STATE_CLOSED_LOOP_CONTROL && 
-                odrv0->axis1.current_state == AXIS_STATE_CLOSED_LOOP_CONTROL && 
-                odrv1->axis0.current_state == AXIS_STATE_CLOSED_LOOP_CONTROL && 
-                odrv1->axis1.current_state == AXIS_STATE_CLOSED_LOOP_CONTROL) {
-                    state = State::RUN;
-                    Serial.println("Successfully inited, entering run mode");
+        while (true) {
+            if (Serial.available()) {
+                char c = Serial.read();
+                if (c == 'Y' || c == 'y') {
+                    break;
                 }
-            break;
+            }
+        }
 
-        case State::RUN:
-            break;
-
-        case State::ERROR_WAIT_FOREVER:       // Do nothing after error
-            break;
+        Serial.println("Warning, robot will collapse now! Restarting both odrives in 5 seconds...");
+        delay(5000);
+        Serial.println("Rebooting now...");
+        odrv0.write<ENDPOINT_REBOOT>(true);
+        odrv1.write<ENDPOINT_REBOOT>(true);
+        Serial.println("Reboot requested");
+        initialize();
+        return;
     }
 
-    return returnNow;
+    // Check if the motors are precalibrated
+    if (!precalibrated()) {
+        Serial.println("At least one motor is not precalibrated! Please precalibrate manually!");
+        Serial.println("First do full calibration, then index search, then offset calibration, "
+            "then set precalibrated to true and save.");
+        while (true);
+    }
+
+    // Load all settings
+    loadCommonSettings(odrv0);
+    loadCommonSettings(odrv1);
+    loadSpecificSettings();
+
+    // Clear errors
+    clearErrors();
+
+    // Find index and home each axis
+    if (!home()) {
+        Serial.println("Homing/Index search failed");
+        while (true);
+    }
+    
 }
+
+void update() {
+
+    float axis0 = max(min(rx.desiredAxis1, AXIS0_MAX_ANGLE), AXIS0_MIN_ANGLE);
+    float axis1 = max(min(rx.desiredAxis2, AXIS1_MAX_ANGLE), AXIS1_MIN_ANGLE);
+    float axis2 = max(min(rx.desiredAxis3, AXIS2_MAX_ANGLE), AXIS2_MIN_ANGLE);
+    float axis3 = max(min(rx.desiredAxis4, AXIS3_MAX_ANGLE), AXIS3_MIN_ANGLE);
+
+    axis0 = (axis0 - AXIS0_ZERO_OFFSET) / 360.f * AXIS0_REDUCTION_RATIO;
+    axis1 = -(axis1 - AXIS1_ZERO_OFFSET) / 360.f * AXIS1_REDUCTION_RATIO;
+    axis2 = (axis2 - AXIS2_ZERO_OFFSET) / 360.f * AXIS2_REDUCTION_RATIO;
+    axis3 = (axis3 - AXIS3_ZERO_OFFSET) / 360.f * AXIS3_REDUCTION_RATIO;
+
+
+    uint16_t seq_ax0 = odrv0.sendReadRequest<ENDPOINT_AXIS0_ENCODER_POS_ESTIMATE>();
+    uint16_t seq_ax1 = odrv0.sendReadRequest<ENDPOINT_AXIS1_ENCODER_POS_ESTIMATE>();
+    //uint16_t seq_ax2 = odrv1.sendReadRequest<ENDPOINT_AXIS0_ENCODER_POS_ESTIMATE>();
+    //uint16_t seq_ax3 = odrv1.sendReadRequest<ENDPOINT_AXIS1_ENCODER_POS_ESTIMATE>();
+
+    if (!tx.safetyMode) {
+        odrv0.write<ENDPOINT_AXIS0_CONTROLLER_INPUT_POS>(axis0, false);
+        odrv0.write<ENDPOINT_AXIS1_CONTROLLER_INPUT_POS>(axis1, false);
+        //odrv1.write<ENDPOINT_AXIS0_CONTROLLER_INPUT_POS>(axis2, false);
+        //odrv1.write<ENDPOINT_AXIS1_CONTROLLER_INPUT_POS>(axis3, false);
+    }
+
+    odrv0.waitForResponse<ENDPOINT_AXIS0_ENCODER_POS_ESTIMATE>(&tx.actualAxis1, seq_ax0);
+    odrv0.waitForResponse<ENDPOINT_AXIS1_ENCODER_POS_ESTIMATE>(&tx.actualAxis2, seq_ax1);
+    //odrv1.waitForResponse<ENDPOINT_AXIS0_ENCODER_POS_ESTIMATE>(&tx.actualAxis3, seq_ax2);
+    //odrv1.waitForResponse<ENDPOINT_AXIS1_ENCODER_POS_ESTIMATE>(&tx.actualAxis4, seq_ax3);
+
+    if (tx.safetyMode) {
+        rx.desiredAxis1 = tx.actualAxis1;
+        rx.desiredAxis2 = tx.actualAxis2;
+        rx.desiredAxis3 = tx.actualAxis3;
+        rx.desiredAxis4 = tx.actualAxis4;
+    }
+
+}
+
+
+
+
+/*
 
 void checkSafetyMode() {
-    if (!tx.safetyMode) {
-        odrv0->axis0.controller_input_pos = max(min(rx.desiredAxis1, AXIS0_MAX_ANGLE), AXIS0_MIN_ANGLE);
-        odrv0->axis1.controller_input_pos = -max(min(rx.desiredAxis2, AXIS1_MAX_ANGLE), AXIS1_MIN_ANGLE);
-        odrv1->axis0.controller_input_pos = max(min(rx.desiredAxis3, AXIS2_MAX_ANGLE), AXIS2_MIN_ANGLE);
-        odrv1->axis1.controller_input_pos = max(min(rx.desiredAxis4, AXIS3_MAX_ANGLE), AXIS3_MIN_ANGLE);
-        tx.actualAxis1 = odrv0->axis0.encoder_pos_estimate;
-        tx.actualAxis2 = -odrv0->axis1.encoder_pos_estimate;
-        tx.actualAxis3 = odrv1->axis0.encoder_pos_estimate;
-        tx.actualAxis4 = odrv1->axis1.encoder_pos_estimate;
-    }
-    else {      // Safety mode
-        rx.desiredAxis1 = odrv0->axis0.controller_input_pos;
-        rx.desiredAxis2 = -odrv0->axis1.controller_input_pos;
-        rx.desiredAxis3 = odrv1->axis0.controller_input_pos;
-        rx.desiredAxis4 = odrv1->axis1.controller_input_pos;
-    }
-}
-
-void setupMotor(Axis* axis, float calibCurrent, float driveCurrent, float torqueConstant) {
-    axis->motor_config_calibration_current = calibCurrent;
-    axis->motor_config_current_lim = driveCurrent;
-    axis->motor_config_torque_constant = torqueConstant;
 }
 
 void startProcess() {
@@ -402,4 +359,4 @@ void updateProcess() {
     checkErrors();
 
     //checkSafetyMode();
-}
+}*/

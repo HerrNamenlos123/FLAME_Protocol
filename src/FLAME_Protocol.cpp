@@ -1,6 +1,10 @@
 
 #include "FLAME_Protocol.h"
 
+#if defined(ARDUINO) && ARDUINO >= 100      // Only for IPAddress to string
+#include "Ethernet.h"
+#endif
+
 namespace FLAME_Protocol {
 
     FLAME_Wrapper wrapper = FLAME_Wrapper_init_zero;
@@ -56,7 +60,10 @@ namespace FLAME_Protocol {
     void discoveryPacketReceived(uint32_t sourceIP) {      // On MCU
 
 #if defined(ARDUINO) && ARDUINO >= 100		// if Arduino
-        DEBUG_PRINTF("Discovery packet received");
+        IPAddress addr(sourceIP);
+        Serial.print("Discovery packet received: ");
+        addr.printTo(Serial);
+        Serial.println();
 #else                                       // Non-Arduino
         return;
 #endif

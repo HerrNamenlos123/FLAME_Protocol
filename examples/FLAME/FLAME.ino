@@ -1,6 +1,5 @@
 
 #include "Arduino.h"
-#include "ODriveBackend.h"
 #include "process.h"
 
 #include <SPI.h>
@@ -65,14 +64,12 @@ void setup() {
     
     server.begin(FLAME_PROTOCOL_UDP_TARGET_PORT);
 
-    setupODrives();
-    startProcess();
+    initialize();
 }
 
 void loop() {
     
-    updateProcess();
-    updateODrives();
+    update();
     updateUDP();
 
 }
